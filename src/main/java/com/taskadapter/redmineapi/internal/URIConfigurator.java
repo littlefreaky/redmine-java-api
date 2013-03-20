@@ -136,7 +136,7 @@ public class URIConfigurator {
 		return guess;
 	}
 
-	public URI getUploadURI() {
-		return createURI("uploads" + URL_POSTFIX);
+	public URI getUploadURI(NameValuePair... args) {
+		return createURI("uploads" + URL_POSTFIX, args);
 	}
 }

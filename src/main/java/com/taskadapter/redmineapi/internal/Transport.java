@@ -1,5 +1,7 @@
 package com.taskadapter.redmineapi.internal;
 
+import com.taskadapter.redmineapi.NotFoundException;
+import com.taskadapter.redmineapi.RedmineAuthenticationException;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
@@ -28,14 +30,11 @@ import org.json.JSONWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.taskadapter.redmineapi.NotFoundException;
-import com.taskadapter.redmineapi.RedmineAuthenticationException;
 import com.taskadapter.redmineapi.RedmineException;
 import com.taskadapter.redmineapi.RedmineFormatException;
 import com.taskadapter.redmineapi.RedmineInternalError;
 import com.taskadapter.redmineapi.RedmineManager;
 import com.taskadapter.redmineapi.RedmineOptions;
-import com.taskadapter.redmineapi.RedmineProcessingException;
 import com.taskadapter.redmineapi.bean.Group;
 import com.taskadapter.redmineapi.bean.Identifiable;
 import com.taskadapter.redmineapi.bean.Issue;
@@ -65,6 +64,8 @@ import com.taskadapter.redmineapi.internal.comm.redmine.RedmineErrorHandler;
 import com.taskadapter.redmineapi.internal.json.JsonInput;
 import com.taskadapter.redmineapi.internal.json.JsonObjectParser;
 import com.taskadapter.redmineapi.internal.json.JsonObjectWriter;
+import java.nio.file.Path;
+import org.apache.http.entity.FileEntity;
 
 /**
  * Redmine transport utilities.
@@ -195,11 +196,16 @@ public final class Transport {
 	 * @throws RedmineException
 	 *             if something goes wrong.
 	 */
-	public <T> T addObject(T object, NameValuePair... params)
+	public <T> T addObject(T object, User impersionate, NameValuePair... params)
 			throws RedmineException {
 		final EntityConfig<T> config = getConfig(object.getClass());
 		URI uri = getURIConfigurator().getObjectsURI(object.getClass(), params);
 		HttpPost httpPost = new HttpPost(uri);
+    
+    if ( impersionate != null ) {
+      httpPost.setHeader("X-Redmine-Switch-User", impersionate.getLogin());
+    }
+    
 		String body = RedmineJSONBuilder.toSimpleJSON(config.singleObjectName,
 				object, config.writer);
 		setEntity(httpPost, body);
@@ -241,12 +247,16 @@ public final class Transport {
 	 * 
 	 * @since 1.8.0
 	 */
-	public <T extends Identifiable> void updateObject(T obj,
+	public <T extends Identifiable> void updateObject(T obj, User impersionate,
 			NameValuePair... params) throws RedmineException {
 		final EntityConfig<T> config = getConfig(obj.getClass());
 		final URI uri = getURIConfigurator().getObjectURI(obj.getClass(),
 				Integer.toString(obj.getId()));
 		final HttpPut http = new HttpPut(uri);
+    
+    if ( impersionate != null ) {
+      http.setHeader("X-Redmine-Switch-User", impersionate.getLogin());
+    }
 
 		final String body = RedmineJSONBuilder.toSimpleJSON(
 				config.singleObjectName, obj, config.writer);
@@ -339,14 +349,16 @@ public final class Transport {
 	/**
 	 * UPloads content on a server.
 	 * 
+   * @param fileName 
+   *            The name of the file to upload
 	 * @param content
 	 *            content stream.
 	 * @return uploaded item token.
 	 * @throws RedmineException
 	 *             if something goes wrong.
 	 */
-	public String upload(InputStream content) throws RedmineException {
-		final URI uploadURI = getURIConfigurator().getUploadURI();
+	public String upload(String fileName, InputStream content) throws RedmineException {
+		final URI uploadURI = getURIConfigurator().getUploadURI(new BasicNameValuePair("filename", fileName));
 		final HttpPost request = new HttpPost(uploadURI);
 		final AbstractHttpEntity entity = new InputStreamEntity(content, -1);
 		/* Content type required by a Redmine */
@@ -358,6 +370,20 @@ public final class Transport {
             RedmineJSONParser.UPLOAD_TOKEN_PARSER);
 	}
 
+	public String upload(Path filePath) throws RedmineException {
+		final URI uploadURI = getURIConfigurator().getUploadURI(new BasicNameValuePair("filename", filePath.getFileName().toString()));
+		final HttpPost request = new HttpPost(uploadURI);
+		final AbstractHttpEntity entity = new FileEntity(filePath.toFile());
+		/* Content type required by a Redmine */
+		entity.setContentType("application/octet-stream");
+		request.setEntity(entity);
+
+		final String result = getCommunicator().sendRequest(request);
+		return parseResponse(result, "upload",
+            RedmineJSONParser.UPLOAD_TOKEN_PARSER);
+	}  
+  
+  
 	/**
 	 * @param classs
 	 *            target class

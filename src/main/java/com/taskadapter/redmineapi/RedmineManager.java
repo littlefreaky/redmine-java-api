@@ -57,6 +57,7 @@ import com.taskadapter.redmineapi.internal.Transport;
 import com.taskadapter.redmineapi.internal.URIConfigurator;
 import com.taskadapter.redmineapi.internal.io.MarkedIOException;
 import com.taskadapter.redmineapi.internal.io.MarkedInputStream;
+import java.nio.file.Path;
 
 /**
  * <b>Entry point</b> for the API: use this class to communicate with Redmine servers.
@@ -82,7 +83,7 @@ public class RedmineManager {
 	public RedmineManager(String uri, String login, String password) {
 		this(uri, login, password, RedmineOptions.simpleOptions());
 	}
-
+  
 	/**
 	 * Creates an instance of RedmineManager class. Host and apiAccessKey are
 	 * not checked at this moment.
@@ -151,12 +152,16 @@ public class RedmineManager {
      * @throws RedmineException
      */
     public Issue createIssue(String projectKey, Issue issue) throws RedmineException {
+      return createIssue(projectKey, issue, null);
+    }
+  
+    public Issue createIssue(String projectKey, Issue issue, User impersionate) throws RedmineException {
 		final Project oldProject = issue.getProject();
 		final Project newProject = new Project();
 		newProject.setIdentifier(projectKey);
 		issue.setProject(newProject);
 		try {
-			return transport.addObject(issue, new BasicNameValuePair("include",
+			return transport.addObject(issue, impersionate, new BasicNameValuePair("include",
 					INCLUDE.attachments.toString()));
 		} finally {
 			issue.setProject(oldProject);
@@ -296,9 +301,14 @@ public class RedmineManager {
       * @since 1.8.0
       */
     public void update(Identifiable obj) throws RedmineException {
-        validate(obj);
-		transport.updateObject(obj);
+      update(obj, null);
     }
+    
+    public void update(Identifiable obj, User impersionate) throws RedmineException {
+        validate(obj);
+		transport.updateObject(obj, impersionate);
+    }
+    
 
     private void validate(Identifiable obj) {
         // TODO this is a temporary step during refactoring. remove this class check, make it generic.
@@ -335,7 +345,11 @@ public class RedmineManager {
      * @throws RedmineException
      */
     public Project createProject(Project project) throws RedmineException {
-		return transport.addObject(project, new BasicNameValuePair("include",
+      return createProject(project, null);
+    }
+      
+    public Project createProject(Project project, User impersionate) throws RedmineException {
+		return transport.addObject(project, impersionate, new BasicNameValuePair("include",
 				"trackers"));
     }
 
@@ -386,7 +400,11 @@ public class RedmineManager {
     }
 
     public User createUser(User user) throws RedmineException {
-		return transport.addObject(user);
+      return createUser(user, null);
+    }
+    
+    public User createUser(User user, User impersionate) throws RedmineException {
+		return transport.addObject(user, impersionate);
     }
 
     /**
@@ -431,8 +449,12 @@ public class RedmineManager {
     }
 
     public TimeEntry createTimeEntry(TimeEntry obj) throws RedmineException {
+      return createTimeEntry(obj, null);
+    }
+    
+    public TimeEntry createTimeEntry(TimeEntry obj, User impersionate) throws RedmineException {
         validate(obj);
-		return transport.addObject(obj);
+		return transport.addObject(obj, impersionate);
     }
 
     public void deleteTimeEntry(Integer id) throws RedmineException {
@@ -720,7 +742,7 @@ public class RedmineManager {
 				"uploadStream");
 		final String token;
 		try {
-			token = transport.upload(wrapper);
+			token = transport.upload(fileName, wrapper);
 			final Attachment result = new Attachment();
 			result.setToken(token);
 			result.setContentType(contentType);
@@ -731,6 +753,23 @@ public class RedmineManager {
 			throw e;
 		}
 	}
+  
+	public Attachment uploadAttachment(Path file, String contentType) throws RedmineException, IOException {
+		final String token;
+		try {
+			token = transport.upload(file);
+			final Attachment result = new Attachment();
+			result.setToken(token);
+			result.setContentType(contentType);
+			result.setFileName(file.getFileName().toString());
+			return result;
+		} catch (RedmineException e) {
+			unwrapException(e, "uploadStream");
+			throw e;
+		}
+	}
+  
+  
 
 	/**
 	 * @param exception
